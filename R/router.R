@@ -1,11 +1,11 @@
 ROUTER_UI_ID <- '_router_ui'
-HIDDEN_ROUTE_INPUT <- '_shiny_router_path'
-HIDDEN_FULLROUTE_INPUT <- '_shiny_router_full'
+INPUT_BINDING_ID <- '_shiny_router_path'
 
 .onLoad <- function(libname, pkgname) {
   # Adds inst/www directory for loading static resources from server.
   # We need to add that to get all javascript code from client app.
-  shiny::addResourcePath('shiny.router', system.file('www/bower_components/page/', package = 'shiny.router', mustWork = TRUE))
+  shiny::addResourcePath('shiny.router.page', system.file('www/bower_components/page/', package = 'shiny.router', mustWork = TRUE))
+  shiny::addResourcePath('shiny.router', system.file('www', package = 'shiny.router', mustWork = TRUE))
 }
 
 #' Internal function that escapes routing path from not safe characters.
@@ -50,34 +50,49 @@ route <- function(path, ui) {
 #' @param routes A routes (list).
 #' @return Router callback.
 create_router_callback <- function(root, routes) {
-  function(input, output) {
-    initialize_router <- shiny::reactive({
-      initialize_code_buffer <- ""
-      for (path in names(routes)) {
-        if (substr(path, 1, 1) == "/") {
-          clean_path <- escape_path(path)
-          register_code <- paste0("page('", clean_path, "', function(context) {
-              $('#", HIDDEN_ROUTE_INPUT, "').val('", clean_path, "').keyup();
-              $('#", HIDDEN_FULLROUTE_INPUT, "').val(context.path).keyup();
-          });\n")
-          initialize_code_buffer <- paste0(initialize_code_buffer, register_code)
-        }
-      }
-      register_code <- paste0(
-        "page('*', function() { page.redirect('", escape_path(root), "'); });",
-        "page({ hashbang:true });"
-      )
-      initialize_code_buffer <- paste0(initialize_code_buffer, register_code)
-      shinyjs::runjs(initialize_code_buffer)
-    })
+  function(input, output, session = shiny::getDefaultReactiveDomain()) {
+
+    # A flag to help us display the starting URL's page, instead of going straight
+    # to root.
+    router_startup <- reactiveVal(TRUE)
+
+    # The page we're currently displaying
+    curpage <- reactiveValues(
+      path = "/",
+      path_and_query = "/"
+    )
 
     output[[ROUTER_UI_ID]] <- shiny::renderUI({
-      initialize_router()
-      location <- input[[HIDDEN_ROUTE_INPUT]]
+      # initialize_router()
+      if (router_startup()) {
+        starting_hash <- shiny::getDefaultReactiveDomain()$clientData$url_hash
+        if (nzchar(starting_hash)) {
+          # TODO: trim shebang from front of starting_hash
+          starting_fullpath <- substr(starting_hash, start = 2, stop = nchar(starting_hash))
+          location <- httr::parse_url(starting_fullpath)$path
+        } else {
+          location <- root
+          starting_fullpath <- location
+        }
+        isolate({
+          router_startup(FALSE)
+          curpage$path_and_query <- starting_fullpath
+          curpage$path <- location
+        })
+      } else {
+        location <- get_page()
+      }
       if (valid_path(routes, location)) {
+        isolate({
+          curpage$page <- get_page()
+          curpage$page_and_query <- get_path_and_query()
+        })
         routes[[location]]
       } else {
-        routes[[root]]
+        # Ignore invalid routes, and tell page.js to change us back to the
+        # current page
+        change_page(curpage$path_and_query, session = session)
+        routes[[curpage$path]]
       }
     })
   }
@@ -112,17 +127,62 @@ make_router <- function(default, ...) {
 #' @export
 router_ui <- function() {
   shiny::tagList(
-    shinyjs::useShinyjs(),
     shiny::singleton(
       shiny::tags$head(
-        shiny::tags$script(src = "shiny.router/page.js")
+        shiny::tags$script(src = "shiny.router.page/page.js"),
+        shiny::tags$script(src = "shiny.router/shiny.router.js")
       )
     ),
-    shiny::uiOutput(ROUTER_UI_ID),
-    shiny::textInput(HIDDEN_ROUTE_INPUT, label = ""),
-    shiny::tags$style(paste0("#", HIDDEN_ROUTE_INPUT, " {display: none;}")),
-    shiny::textInput(HIDDEN_FULLROUTE_INPUT, label = ""),
-    shiny::tags$style(paste0("#", HIDDEN_FULLROUTE_INPUT, " {display: none;}"))
+    shiny::uiOutput(ROUTER_UI_ID)
   )
 }
 
+get_router_field<- function(fieldName, session = shiny::getDefaultReactiveDomain()) {
+  if (shiny::isTruthy(session$input[[INPUT_BINDING_ID]])) {
+    return(session$input[[INPUT_BINDING_ID]][[fieldName]] )
+  } else {
+    return(FALSE)
+  }
+}
+
+#' @export
+get_page <- function(session = shiny::getDefaultReactiveDomain()) {
+  get_router_field("path", session)
+}
+
+#' @export
+get_path_and_query <- function(session = shiny::getDefaultReactiveDomain()) {
+  get_router_field("path_and_query", session)
+}
+
+#' @export
+get_query <- function(field = NULL, field_required = TRUE, session = shiny::getDefaultReactiveDomain()) {
+  n <- get_router_field("path_and_query", session)
+  if(n) {
+    if (missing(field)) {
+      return(
+        httr::parse_url(n)$query
+      )
+    } else {
+      field <- httr::parse_url(n)$query$field
+      if (field.required) {
+        req(field, cancelOutput = TRUE)
+      }
+      return(field)
+    }
+  } else {
+    return(FALSE)
+  }
+}
+
+#' @export
+change_page <- function(page, session = shiny::getDefaultReactiveDomain()) {
+  session$sendInputMessage(page, INPUT_BINDING_ID)
+}
+
+#' @export
+req_page <- function(page, session = shiny::getDefaultReactiveDomain()) {
+  req(
+    (get_page(session) == page)
+  )
+}
