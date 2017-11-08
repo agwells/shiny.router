@@ -15,6 +15,23 @@ window.shiny_router = function() {
    */
   var shinyTriggerUpdateFn = false;
 
+  page("*", function(context, next){
+    // TODO: remove this
+    console.log("Middleware called", context, next);
+    // So, this eliminates the route validation. But it also eliminates the
+    // need to communicate the routes back from the server-side to the
+    // client-side!
+    current_context = context;
+    if (false !== shinyTriggerUpdateFn) {
+      shinyTriggerUpdateFn();
+    }
+  })
+  page({
+    hashbang: true, // Use hashbang-based paths, e.g. "http://example.com/#!item?id="
+    click: false // Don't set up a full-page click handler that attempts
+                 // to intercept clicks and see whether they should be routed
+  });
+
   /**
    * To fit into the Shiny lifecycle nicely, we'll use an InputBinding. Normally
    * this is meant to track a specific DOM element, but we'll just return a phantom
@@ -34,31 +51,21 @@ window.shiny_router = function() {
      * the cookie (if present)
      */
     getValue: function(el) {
+      // TODO: remove this
       console.log("shiny.router::getValue", current_context);
       if (current_context) {
-        return {
-          path: current_context.pathname,
-          path_and_query: current_context.path
+        var v = {
+          page: current_context.pathname,
+          page_with_params: current_context.path
         };
+        console.log("returning: ", v);
+        return v;
       } else {
         return false;
       }
     },
     setValue: function(el, value) {},
     subscribe: function(el, callback) {
-
-      page({hashbang: true});
-      page("*", function(context, next){
-        console.log("Middleware called", context, next);
-        // So, this eliminates the route validation. But it also eliminates the
-        // need to communicate the routes back from the server-side to the
-        // client-side!
-        current_context = context;
-        if (false !== shinyTriggerUpdateFn) {
-          //shinyTriggerUpdateFn();
-        }
-      })
-
       // Make the callback available for us to invoke it manually.
       shinyTriggerUpdateFn = callback;
     },
@@ -66,13 +73,14 @@ window.shiny_router = function() {
       shinyTriggerUpdateFn = false;
     },
     receiveMessage: function(el, data) {
+      // TODO: remove this
       console.log("shiny.router::receiveMessage", el, data);
       // We can use messages from Shiny to change the currently loaded page.
       page(data);
     }
   });
 
-//  Shiny.inputBindings.register(inputBinding, "shiny.router");
+  Shiny.inputBindings.register(inputBinding, "shiny.router");
 
   /**
    * The things that will be accessible under window.nzcerapi
