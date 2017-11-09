@@ -5,7 +5,7 @@
  * @todo: minify.
  */
 window.shiny_router = function() {
-  const ROUTE_INPUT = '_shiny_router_path'
+  const ROUTE_INPUT = 'shiny.router.inputId'
 
   current_context = false;
 
@@ -23,7 +23,10 @@ window.shiny_router = function() {
     // client-side!
     current_context = context;
     if (false !== shinyTriggerUpdateFn) {
+      console.log("Telling shiny we have an upate!")
       shinyTriggerUpdateFn();
+    } else {
+      console.log("Still no shiny trigger function.")
     }
   })
   page({

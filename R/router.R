@@ -1,5 +1,5 @@
 ROUTER_UI_ID <- '_router_ui'
-INPUT_BINDING_ID <- '_shiny_router_path'
+INPUT_BINDING_ID <- 'shiny.router.inputId'
 
 .onLoad <- function(libname, pkgname) {
   # Adds inst/www directory for loading static resources from server.
@@ -245,18 +245,22 @@ get_page_with_params <- function(session = shiny::getDefaultReactiveDomain()) {
 #' @reactivesource
 #' @export
 get_page_params <- function(field = NULL, session = shiny::getDefaultReactiveDomain()) {
+  cat(file=stderr(), "Trying to fetch field '", field, "'.\n")
   n <- get_router_field("page_with_params", session)
   if(!identical(FALSE, n)) {
+    cat(file=stderr(), "page_with_params: '", n, "'\n")
     if (missing(field)) {
       return(
         # Return a list of all the query params
         httr::parse_url(n)$query
       )
     } else {
-      field <- httr::parse_url(n)$query$field
-      return(field)
+      fieldVal <- httr::parse_url(n)$query[[field]]
+      cat(file = stderr(), "field value: '", fieldVal, "'\n");
+      return(fieldVal)
     }
   } else {
+    cat(file=stderr(), "Couldn't fetch page_with_params.\n");
     return(FALSE)
   }
 }
@@ -286,5 +290,5 @@ is_page <- function(page, session = shiny::getDefaultReactiveDomain(), ...) {
 #' @export
 change_page <- function(page, session = shiny::getDefaultReactiveDomain()) {
   cat(file=stderr(), "Sending page change message to client: ", page, "\n")
-  session$sendInputMessage(page, INPUT_BINDING_ID)
+  session$sendInputMessage(INPUT_BINDING_ID, page)
 }
